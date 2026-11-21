@@ -1,6 +1,8 @@
 name: Build APK (armeabi-v7a)
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
