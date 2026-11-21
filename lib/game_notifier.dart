@@ -25,6 +25,9 @@ class GameNotifier extends ChangeNotifier {
   bool get isCheck => position.isCheck;
   bool get isGameOver => position.isGameOver;
 
+  /// Salinan riwayat langkah (untuk Game Review setelah game selesai).
+  List<Move> get playedMoves => List<Move>.unmodifiable(_moves);
+
   String get resultTitle {
     final Side? winner = position.outcome?.winner;
     if (winner == Side.white) return 'White wins';

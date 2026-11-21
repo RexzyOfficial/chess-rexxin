@@ -39,6 +39,10 @@ jobs:
       - name: Build APK ARM 32-bit
         run: flutter build apk --release --target-platform android-arm
 
+      - name: Daftar library native ARM 32-bit (cek Stockfish)
+        run: |
+          unzip -l build/app/outputs/flutter-apk/app-release.apk | grep "lib/armeabi-v7a" || echo "Tidak ada library armeabi-v7a"
+
       - uses: actions/upload-artifact@v4
         with:
           name: chess-rexxin-armeabi-v7a

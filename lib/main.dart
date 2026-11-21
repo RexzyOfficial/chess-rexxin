@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'engine/stockfish_service.dart';
 import 'game_notifier.dart';
 import 'home_screen.dart';
 
@@ -13,8 +16,34 @@ void main() {
   );
 }
 
-class ChessRexxinApp extends StatelessWidget {
+class ChessRexxinApp extends StatefulWidget {
   const ChessRexxinApp({super.key});
+
+  @override
+  State<ChessRexxinApp> createState() => _ChessRexxinAppState();
+}
+
+class _ChessRexxinAppState extends State<ChessRexxinApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Aplikasi ditutup: hentikan analisis dan matikan engine.
+    if (state == AppLifecycleState.detached) {
+      unawaited(StockfishService.instance.shutdown());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

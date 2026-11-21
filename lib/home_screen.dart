@@ -5,12 +5,11 @@ import 'package:dartchess/dartchess.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'analysis/game_line.dart';
 import 'game_notifier.dart';
-
-const Color _accent = Color(0xFF769656);
-const Color _panel = Color(0xFF262421);
-const Color _panelBorder = Color(0xFF34312D);
-const Color _checkRed = Color(0xFFC0392B);
+import 'screens/pgn_screen.dart';
+import 'screens/review_screen.dart';
+import 'ui_colors.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -47,13 +46,44 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Game Review hanya tersedia setelah permainan selesai.
+  void _openGameReview() {
+    final GameLine line;
+    try {
+      line = lineFromMoves(_game.playedMoves);
+    } on GameLineException catch (e) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ReviewScreen(
+          line: line,
+          title: 'Game Review',
+          showArrows: false,
+          autoStart: true,
+          onNewGame: _game.newGame,
+        ),
+      ),
+    );
+  }
+
+  void _openPgn() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const PgnScreen()),
+    );
+  }
+
   Future<void> _showResultDialog() {
     final String title = _game.resultTitle;
     final String reason = _game.resultReason;
     return showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: _panel,
+        backgroundColor: kPanel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           title,
@@ -71,8 +101,15 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Close'),
           ),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _openGameReview();
+            },
+            child: const Text('Game Review'),
+          ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: _accent),
+            style: FilledButton.styleFrom(backgroundColor: kAccent),
             onPressed: () {
               Navigator.of(ctx).pop();
               _game.newGame();
@@ -141,6 +178,23 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         toolbarHeight: 44,
         title: _StatusTitle(game: game),
+        actions: [
+          if (game.isGameOver)
+            IconButton(
+              tooltip: 'Game Review',
+              icon: const Icon(Icons.insights),
+              onPressed: _openGameReview,
+            ),
+          PopupMenuButton<String>(
+            tooltip: 'Menu',
+            onSelected: (value) {
+              if (value == 'pgn') _openPgn();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem<String>(value: 'pgn', child: Text('Analyze PGN')),
+            ],
+          ),
+        ],
       ),
       body: SafeArea(
         child: LayoutBuilder(
@@ -222,7 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const textStyle = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600);
     if (filled) {
       return FilledButton.styleFrom(
-        backgroundColor: _accent,
+        backgroundColor: kAccent,
         foregroundColor: Colors.white,
         shape: shape,
         padding: padding,
@@ -231,8 +285,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return OutlinedButton.styleFrom(
       foregroundColor: Colors.white70,
-      side: const BorderSide(color: _panelBorder),
-      backgroundColor: _panel,
+      side: const BorderSide(color: kPanelBorder),
+      backgroundColor: kPanel,
       shape: shape,
       padding: padding,
       textStyle: textStyle,
@@ -290,7 +344,7 @@ class _StatusTitle extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: _checkRed,
+              color: kCheckRed,
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Text(
