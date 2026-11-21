@@ -28,9 +28,11 @@ jobs:
           sed -i 's/android:label="[^"]*"/android:label="Chess Rexxin"/' android/app/src/main/AndroidManifest.xml
 
       - name: Pastikan tidak ada abiFilters yang membatasi
-        run: grep -rn "abiFilters" android/app/build.gradle* || echo "OK: tidak ada abiFilters"
+        run: |
+          grep -rn "abiFilters" android/app/build.gradle* || echo "Tidak ada abiFilters, armeabi-v7a aman"
 
-      - run: flutter pub get
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Build APK ARM 32-bit
         run: flutter build apk --release --target-platform android-arm
