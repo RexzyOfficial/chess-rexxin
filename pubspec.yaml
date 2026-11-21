@@ -1,0 +1,16 @@
+name: chess_rexxin
+description: Chess Rexxin - aplikasi catur offline 2 pemain lokal.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  chessground: ^10.3.0
+  dartchess: any
+
+flutter:
+  uses-material-design: true
