@@ -3,12 +3,14 @@ import 'dart:math' as math;
 import 'package:chessground/chessground.dart';
 import 'package:dartchess/dartchess.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-const String _startFen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+import 'game_notifier.dart';
 
 const Color _accent = Color(0xFF769656);
 const Color _panel = Color(0xFF262421);
 const Color _panelBorder = Color(0xFF34312D);
+const Color _checkRed = Color(0xFFC0392B);
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,85 +20,68 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late final ChessboardController _controller;
-
-  Pieces _pieces = Map.of(readFen(_startFen));
-  Side _sideToMove = Side.white;
-  Move? _lastMove;
-  Side _orientation = Side.white;
+  late final GameNotifier _game;
+  bool _resultShown = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = ChessboardController(game: _buildGame());
+    _game = context.read<GameNotifier>();
+    _game.addListener(_onGameChanged);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _game.removeListener(_onGameChanged);
     super.dispose();
   }
 
-  // Tahap UI: semua bidak boleh pindah ke kotak mana pun (tanpa validasi).
-  GameData _buildGame() {
-    final ValidMoves free = {
-      for (final entry in _pieces.entries)
-        entry.key: {
-          for (final target in Square.values)
-            if (target != entry.key) target,
-        },
-    };
-    return GameData(
-      fen: writeFen(_pieces),
-      playerSide: PlayerSide.both,
-      sideToMove: _sideToMove,
-      validMoves: free,
-      lastMove: _lastMove,
-    );
+  void _onGameChanged() {
+    if (_game.isGameOver && !_resultShown) {
+      _resultShown = true;
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted && _game.isGameOver) _showResultDialog();
+      });
+    } else if (!_game.isGameOver) {
+      _resultShown = false;
+    }
   }
 
-  void _onMove(Move move, {bool? viaDragAndDrop}) {
-    if (move is! NormalMove) return;
-    final piece = _pieces[move.from];
-    if (piece == null) return;
-
-    final next = Map.of(_pieces)..remove(move.from);
-    next[move.to] = move.promotion == null
-        ? piece
-        : Piece(color: piece.color, role: move.promotion!);
-
-    setState(() {
-      _pieces = next;
-      _lastMove = move;
-      _sideToMove = piece.color == Side.white ? Side.black : Side.white;
-    });
-    _controller.updatePosition(_buildGame());
-  }
-
-  void _newGame() {
-    setState(() {
-      _pieces = Map.of(readFen(_startFen));
-      _sideToMove = Side.white;
-      _lastMove = null;
-    });
-    _controller.updatePosition(_buildGame(), animate: false);
-  }
-
-  void _flipBoard() {
-    setState(() {
-      _orientation = _orientation == Side.white ? Side.black : Side.white;
-    });
-  }
-
-  void _undo() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('Undo belum tersedia di tahap ini'),
-          duration: Duration(seconds: 1),
+  Future<void> _showResultDialog() {
+    final String title = _game.resultTitle;
+    final String reason = _game.resultReason;
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _panel,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
         ),
-      );
+        content: Text(
+          reason,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 15, color: Colors.white70),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _accent),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _game.newGame();
+            },
+            child: const Text('New Game'),
+          ),
+        ],
+      ),
+    );
   }
 
   // Bulatkan ke kelipatan 8 supaya kotak tajam.
@@ -105,43 +90,42 @@ class _HomeScreenState extends State<HomeScreen> {
     return math.max(v, 80);
   }
 
-  Widget _buildBoard(double size) {
+  Widget _buildBoard(GameNotifier game, double size) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: Chessboard(
         size: size,
-        controller: _controller,
-        orientation: _orientation,
-        onMove: _onMove,
+        controller: game.boardController,
+        orientation: game.orientation,
+        onMove: game.onMove,
         settings: const ChessboardSettings(
           colorScheme: ChessboardColorScheme.brown,
           pieceAssets: PieceSet.cburnettAssets,
           enableCoordinates: true,
-          showValidMoves: false,
+          showValidMoves: true,
           enablePremoves: false,
-          autoQueenPromotion: true,
           animationDuration: Duration(milliseconds: 200),
         ),
       ),
     );
   }
 
-  List<Widget> _buildButtons() {
+  List<Widget> _buildButtons(GameNotifier game) {
     return [
       FilledButton.icon(
-        onPressed: _newGame,
+        onPressed: game.newGame,
         icon: const Icon(Icons.add, size: 18),
         label: const Text('New Game'),
         style: _buttonStyle(filled: true),
       ),
       OutlinedButton.icon(
-        onPressed: _undo,
+        onPressed: game.canUndo ? game.undo : null,
         icon: const Icon(Icons.undo, size: 18),
         label: const Text('Undo'),
         style: _buttonStyle(filled: false),
       ),
       OutlinedButton.icon(
-        onPressed: _flipBoard,
+        onPressed: game.flipBoard,
         icon: const Icon(Icons.swap_vert, size: 18),
         label: const Text('Flip Board'),
         style: _buttonStyle(filled: false),
@@ -151,6 +135,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final GameNotifier game = context.watch<GameNotifier>();
+
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 48,
@@ -168,19 +154,19 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context, c) {
             const double pad = 12;
             final bool wide = c.maxWidth > c.maxHeight * 1.15;
+            final buttons = _buildButtons(game);
 
             if (wide) {
-              // Landscape / split kiri-kanan: papan di kiri, tombol di kanan.
-              const double panelW = 140;
+              // Landscape / split kiri-kanan: papan kiri, status + tombol kanan.
+              const double panelW = 150;
               final double size = _fit(
                 math.min(c.maxHeight - pad * 2, c.maxWidth - pad * 3 - panelW),
               );
-              final buttons = _buildButtons();
               return Center(
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildBoard(size),
+                    _buildBoard(game, size),
                     const SizedBox(width: pad),
                     SizedBox(
                       width: panelW,
@@ -188,6 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          _StatusBar(game: game, minHeight: 44),
+                          const SizedBox(height: 12),
                           for (int i = 0; i < buttons.length; i++) ...[
                             if (i > 0) const SizedBox(height: 8),
                             buttons[i],
@@ -200,17 +188,25 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             }
 
-            // Portrait / split atas-bawah: papan di atas, tombol di bawah.
+            // Portrait / split atas-bawah: status, papan, tombol.
+            const double statusH = 40;
             const double buttonsH = 46;
             final double size = _fit(
-              math.min(c.maxWidth - pad * 2, c.maxHeight - buttonsH - pad * 3),
+              math.min(
+                c.maxWidth - pad * 2,
+                c.maxHeight - statusH - buttonsH - 8 - pad * 3,
+              ),
             );
-            final buttons = _buildButtons();
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildBoard(size),
+                  SizedBox(
+                    width: size,
+                    child: _StatusBar(game: game, minHeight: statusH),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildBoard(game, size),
                   const SizedBox(height: pad),
                   SizedBox(
                     width: size,
@@ -255,6 +251,88 @@ class _HomeScreenState extends State<HomeScreen> {
       shape: shape,
       padding: padding,
       textStyle: textStyle,
+    );
+  }
+}
+
+/// Giliran aktif, badge Check, dan hasil akhir.
+class _StatusBar extends StatelessWidget {
+  const _StatusBar({required this.game, required this.minHeight});
+
+  final GameNotifier game;
+  final double minHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool over = game.isGameOver;
+    final bool whiteTurn = game.turn == Side.white;
+
+    final List<Widget> children;
+    if (over) {
+      final String reason = game.resultReason;
+      children = [
+        const Icon(Icons.emoji_events_outlined, size: 18, color: Colors.amber),
+        Text(
+          game.resultTitle,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        if (reason.isNotEmpty)
+          Text(
+            '· $reason',
+            style: const TextStyle(fontSize: 13, color: Colors.white60),
+          ),
+      ];
+    } else {
+      children = [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: whiteTurn ? const Color(0xFFF2F2F2) : const Color(0xFF1B1B1B),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white38),
+          ),
+        ),
+        Text(
+          whiteTurn ? 'White to move' : 'Black to move',
+          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+        ),
+        if (game.isCheck)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: _checkRed,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+              'Check',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+      ];
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      constraints: BoxConstraints(minHeight: minHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: _panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: over ? _accent : _panelBorder),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
+        children: children,
+      ),
     );
   }
 }
