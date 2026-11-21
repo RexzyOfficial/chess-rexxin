@@ -139,26 +139,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 48,
-        title: const Text(
-          'Chess Rexxin',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
-          ),
-        ),
+        toolbarHeight: 44,
+        title: _StatusTitle(game: game),
       ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, c) {
-            const double pad = 12;
+            const double pad = 8;
             final bool wide = c.maxWidth > c.maxHeight * 1.15;
             final buttons = _buildButtons(game);
 
             if (wide) {
-              // Landscape / split kiri-kanan: papan kiri, status + tombol kanan.
-              const double panelW = 150;
+              // Landscape / split kiri-kanan: papan kiri, tombol kanan.
+              const double panelW = 140;
               final double size = _fit(
                 math.min(c.maxHeight - pad * 2, c.maxWidth - pad * 3 - panelW),
               );
@@ -174,8 +167,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _StatusBar(game: game, minHeight: 44),
-                          const SizedBox(height: 12),
                           for (int i = 0; i < buttons.length; i++) ...[
                             if (i > 0) const SizedBox(height: 8),
                             buttons[i],
@@ -188,24 +179,18 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             }
 
-            // Portrait / split atas-bawah: status, papan, tombol.
-            const double statusH = 40;
-            const double buttonsH = 46;
+            // Portrait / split atas-bawah: papan lalu tombol.
+            const double buttonsH = 44;
             final double size = _fit(
               math.min(
                 c.maxWidth - pad * 2,
-                c.maxHeight - statusH - buttonsH - 8 - pad * 3,
+                c.maxHeight - buttonsH - pad * 3,
               ),
             );
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: size,
-                    child: _StatusBar(game: game, minHeight: statusH),
-                  ),
-                  const SizedBox(height: 8),
                   _buildBoard(game, size),
                   const SizedBox(height: pad),
                   SizedBox(
@@ -233,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(12),
     );
-    const padding = EdgeInsets.symmetric(horizontal: 6, vertical: 12);
+    const padding = EdgeInsets.symmetric(horizontal: 6, vertical: 10);
     const textStyle = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600);
     if (filled) {
       return FilledButton.styleFrom(
@@ -255,12 +240,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Giliran aktif, badge Check, dan hasil akhir.
-class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.game, required this.minHeight});
+/// Status di judul AppBar: giliran aktif, badge Check, atau hasil akhir.
+class _StatusTitle extends StatelessWidget {
+  const _StatusTitle({required this.game});
 
   final GameNotifier game;
-  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -272,15 +256,18 @@ class _StatusBar extends StatelessWidget {
       final String reason = game.resultReason;
       children = [
         const Icon(Icons.emoji_events_outlined, size: 18, color: Colors.amber),
+        const SizedBox(width: 8),
         Text(
           game.resultTitle,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
-        if (reason.isNotEmpty)
+        if (reason.isNotEmpty) ...[
+          const SizedBox(width: 6),
           Text(
             '· $reason',
             style: const TextStyle(fontSize: 13, color: Colors.white60),
           ),
+        ],
       ];
     } else {
       children = [
@@ -293,11 +280,13 @@ class _StatusBar extends StatelessWidget {
             border: Border.all(color: Colors.white38),
           ),
         ),
+        const SizedBox(width: 8),
         Text(
           whiteTurn ? 'White to move' : 'Black to move',
-          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
-        if (game.isCheck)
+        if (game.isCheck) ...[
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -313,26 +302,13 @@ class _StatusBar extends StatelessWidget {
               ),
             ),
           ),
+        ],
       ];
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      constraints: BoxConstraints(minHeight: minHeight),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: _panel,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: over ? _accent : _panelBorder),
-      ),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 8,
-        runSpacing: 4,
-        children: children,
-      ),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
     );
   }
 }
