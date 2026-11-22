@@ -225,3 +225,52 @@ MoveReview reviewMove({
 
   return MoveReview(cpl: cpl, quality: quality);
 }
+
+/// Seberapa perlu langkah ini diverifikasi ulang pada depth lebih tinggi
+/// (tahap 2). Null = langkah biasa, tidak perlu. Makin besar = makin prioritas.
+///
+/// Dianggap rumit bila: CPL >= 40, Brilliant, ada mate, garis terbaik
+/// memenangkan material (CPL >= 15), mirip pengorbanan (CPL <= 30), atau
+/// posisi "only move" dan langkah pemain bukan yang terbaik (CPL >= 20).
+int? verificationPriority({
+  required Position before,
+  required Position afterPosition,
+  required PositionAnalysis b,
+  required PositionAnalysis a,
+  required MoveReview review,
+}) {
+  final Side mover = before.turn;
+  int priority = -1;
+
+  if (review.cpl >= 40) priority = math.max(priority, review.cpl);
+  if (review.quality == MoveQuality.brilliant) {
+    priority = math.max(priority, 1400);
+  }
+  if ((b.score.mate ?? 0) != 0 || (a.score.mate ?? 0) != 0) {
+    priority = math.max(priority, 500);
+  }
+
+  try {
+    final int? gain = _bestLineGain(before, b, mover);
+    if (gain != null && gain >= 3 && review.cpl >= 15) {
+      priority = math.max(priority, 200 + review.cpl);
+    }
+
+    final int? delta = _playedLineDelta(before, afterPosition, a, mover);
+    if (delta != null && delta <= -2 && review.cpl <= 30) {
+      priority = math.max(priority, 300);
+    }
+
+    final Score? alt = b.altScore;
+    if (alt != null) {
+      final int gap = _limit(b.score.asCp) - _limit(alt.asCp);
+      if (gap >= 150 && review.cpl >= 20) {
+        priority = math.max(priority, 150 + review.cpl);
+      }
+    }
+  } catch (_) {
+    // Abaikan: kriteria lain tetap berlaku.
+  }
+
+  return priority < 0 ? null : priority;
+}

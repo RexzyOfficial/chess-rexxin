@@ -31,8 +31,14 @@ class StockfishService {
 
   static final StockfishService instance = StockfishService._();
 
-  /// Kedalaman analisis: `go depth 18`, tanpa movetime atau batas lain.
-  static const int analysisDepth = 18;
+  /// Tahap 1: semua posisi.
+  static const int quickDepth = 16;
+
+  /// Tahap 2: hanya posisi/langkah rumit.
+  static const int deepDepth = 18;
+
+  /// Posisi yang masih di dalam buku opening (tidak perlu dalam).
+  static const int bookDepth = 12;
 
   /// Jumlah variasi yang dicari dan dilaporkan.
   static const int multiPv = 2;
@@ -177,11 +183,12 @@ class StockfishService {
     }
   }
 
-  /// Analisis satu posisi: `position fen <FEN>` lalu `go depth 18`.
-  /// Tanpa movetime atau batas waktu: berjalan sampai depth 18 selesai.
+  /// Analisis satu posisi: `position fen <FEN>` lalu `go depth <depth>`.
+  /// Tanpa movetime atau batas waktu: berjalan sampai depth tersebut selesai.
   /// Mengembalikan null bila dibatalkan atau engine gagal/mati.
   Future<EngineResult?> analyze(
     String fen, {
+    required int depth,
     void Function(int depth)? onDepth,
   }) async {
     if (_search != null) await cancel();
@@ -190,7 +197,7 @@ class StockfishService {
     final _Search search = _Search(onDepth);
     _search = search;
     _send('position fen $fen');
-    _send('go depth $analysisDepth');
+    _send('go depth $depth');
     return search.completer.future;
   }
 

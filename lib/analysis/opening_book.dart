@@ -54,6 +54,8 @@ class OpeningBook {
 
   static final OpeningBook instance = OpeningBook._();
 
+  static final String _startKey = bookKey(Chess.initial);
+
   Set<String> _keys = const <String>{};
   Future<void>? _loading;
 
@@ -68,7 +70,15 @@ class OpeningBook {
     }
   }
 
-  /// True bila posisi ini ada di salah satu baris opening.
+  /// True bila posisi ini ada di salah satu baris opening (dasar label Book).
   bool contains(Position pos) =>
       _keys.isNotEmpty && _keys.contains(bookKey(pos));
+
+  /// Seperti [contains], tetapi posisi awal standar juga dianggap buku.
+  /// Dipakai untuk memilih depth analisis yang lebih rendah.
+  bool isBookPosition(Position pos) {
+    if (_keys.isEmpty) return false;
+    final String key = bookKey(pos);
+    return key == _startKey || _keys.contains(key);
+  }
 }

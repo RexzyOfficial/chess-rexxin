@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../analysis/analysis_controller.dart';
 import '../analysis/game_line.dart';
 import '../analysis/move_quality.dart';
-import '../engine/stockfish_service.dart';
 import '../engine/uci.dart';
 import '../ui_colors.dart';
 import 'board_overlay.dart';
@@ -273,7 +272,7 @@ class _ReviewBodyState extends State<_ReviewBody> {
   }
 }
 
-/// Status analisis: tombol Analyze, progress, cancel, error, New Game.
+/// Status analisis: tombol Analyze, progress per tahap, cancel, error, New Game.
 class _AnalysisBar extends StatelessWidget {
   const _AnalysisBar({required this.ctrl, required this.onNewGame});
 
@@ -284,13 +283,17 @@ class _AnalysisBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool running = ctrl.status == AnalysisStatus.running;
 
-    // Selama berjalan, doneCount = indeks posisi yang sedang dianalisis:
-    // 0 = posisi awal, k = posisi setelah langkah ke-k.
-    final String positionText = ctrl.doneCount == 0
-        ? 'Analyzing start position'
-        : 'Analyzing move ${ctrl.doneCount}/${ctrl.line.length}';
-    final String depthText = ctrl.currentDepth > 0
-        ? ' · depth ${ctrl.currentDepth}/${StockfishService.analysisDepth}'
+    // Tahap 1: doneCount = indeks posisi yang sedang dianalisis
+    // (0 = posisi awal, k = posisi setelah langkah ke-k).
+    // Tahap 2: posisi rumit yang diverifikasi pada depth lebih tinggi.
+    final String positionText = ctrl.stage == AnalysisStage.verify
+        ? 'Verifying key moves '
+            '${math.min(ctrl.deepDone + 1, ctrl.deepTotal)}/${ctrl.deepTotal}'
+        : (ctrl.doneCount == 0
+            ? 'Analyzing start position'
+            : 'Analyzing move ${ctrl.doneCount}/${ctrl.line.length}');
+    final String depthText = ctrl.currentDepth > 0 && ctrl.targetDepth > 0
+        ? ' · depth ${ctrl.currentDepth}/${ctrl.targetDepth}'
         : '';
 
     final Widget content = switch (ctrl.status) {
@@ -397,7 +400,8 @@ class _AnalysisBar extends StatelessWidget {
 }
 
 /// Langkah terpilih: label kualitas + evaluasi singkat (+ alternatif MultiPV 2
-/// di mode PGN), dengan tombol prev/next.
+/// di mode PGN), dengan tombol prev/next. Label yang belum diverifikasi pada
+/// depth penuh ditandai "preliminary".
 class _SelectionInfo extends StatelessWidget {
   const _SelectionInfo({required this.ctrl, required this.showAlternative});
 
@@ -440,6 +444,15 @@ class _SelectionInfo extends StatelessWidget {
                     ),
                   ),
                   if (review != null) _QualityBadge(quality: review.quality),
+                  if (review != null && !ctrl.isReviewFinal(i))
+                    const Text(
+                      'preliminary',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.white54,
+                      ),
+                    ),
                   if (evalText != null) _EvalChip(text: evalText),
                 ],
               ),
