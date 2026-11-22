@@ -16,7 +16,7 @@ export 'analysis_models.dart';
 enum AnalysisStatus { idle, running, done, cancelled, error }
 
 /// Menganalisis seluruh posisi sebuah [GameLine] dengan Stockfish
-/// (depth 22, MultiPV 2, tanpa batas waktu) lalu menghitung CPL dan label
+/// (depth 18, MultiPV 2, tanpa batas waktu) lalu menghitung CPL dan label
 /// kualitas tiap langkah.
 class AnalysisController extends ChangeNotifier {
   AnalysisController(this.line)

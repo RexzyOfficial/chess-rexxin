@@ -31,8 +31,8 @@ class StockfishService {
 
   static final StockfishService instance = StockfishService._();
 
-  /// Kedalaman analisis: `go depth 22`, tanpa movetime atau batas lain.
-  static const int analysisDepth = 22;
+  /// Kedalaman analisis: `go depth 18`, tanpa movetime atau batas lain.
+  static const int analysisDepth = 18;
 
   /// Jumlah variasi yang dicari dan dilaporkan.
   static const int multiPv = 2;
@@ -177,8 +177,8 @@ class StockfishService {
     }
   }
 
-  /// Analisis satu posisi: `position fen <FEN>` lalu `go depth 22`.
-  /// Tanpa movetime atau batas waktu: berjalan sampai depth 22 selesai.
+  /// Analisis satu posisi: `position fen <FEN>` lalu `go depth 18`.
+  /// Tanpa movetime atau batas waktu: berjalan sampai depth 18 selesai.
   /// Mengembalikan null bila dibatalkan atau engine gagal/mati.
   Future<EngineResult?> analyze(
     String fen, {
