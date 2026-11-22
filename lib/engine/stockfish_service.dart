@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:multistockfish/multistockfish.dart';
 
@@ -35,6 +37,13 @@ class StockfishService {
   /// Jumlah variasi yang dicari dan dilaporkan.
   static const int multiPv = 2;
 
+  /// Thread pencarian: setengah dari jumlah core, minimal 1, maksimal 4.
+  static final int threads =
+      math.max(1, math.min(4, Platform.numberOfProcessors ~/ 2));
+
+  /// Ukuran hash table (MB). Naikkan ke 128 bila HP kuat; turunkan bila RAM sempit.
+  static const int hashMb = 64;
+
   Stockfish? _engine;
   StreamSubscription<String>? _sub;
   Future<void>? _shutdownFuture;
@@ -67,8 +76,8 @@ class StockfishService {
       engine.state.addListener(_onEngineState);
 
       // Konfigurasi UCI. Tanpa Skill Level / UCI_Elo.
-      _send('setoption name Threads value 1');
-      _send('setoption name Hash value 32');
+      _send('setoption name Threads value $threads');
+      _send('setoption name Hash value $hashMb');
       _send('setoption name MultiPV value $multiPv');
       await _waitReady();
 
