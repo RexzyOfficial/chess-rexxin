@@ -31,6 +31,21 @@ class GameLine {
     final bool white = positions[ply - 1].turn == Side.white;
     return white ? '$number. ${sans[ply - 1]}' : '$number… ${sans[ply - 1]}';
   }
+
+  /// Kotak tempat badge kualitas ditampilkan untuk langkah ke-[ply] (1-based):
+  /// kotak tujuan bidak yang bergerak. Castling -> raja (g/c-file),
+  /// promosi -> kotak bidak baru.
+  Square badgeSquare(int ply) {
+    final String san = sans[ply - 1];
+    if (san.startsWith('O-O')) {
+      final bool white = positions[ply - 1].turn == Side.white;
+      final bool queenSide = san.startsWith('O-O-O');
+      return Square.values[(white ? 0 : 56) + (queenSide ? 2 : 6)];
+    }
+    final Move m = moves[ply - 1];
+    if (m is NormalMove) return m.to;
+    return Square.values[0];
+  }
 }
 
 /// Membangun GameLine dari daftar langkah permainan lokal (dari posisi awal).
@@ -77,7 +92,9 @@ Position _startingPosition(PgnGame<PgnNodeData> game) {
 GameLine lineFromPgn(String text) {
   final String trimmed = text.trim();
   if (trimmed.isEmpty) {
-    throw const GameLineException('PGN masih kosong. Tempel teks PGN atau upload file.');
+    throw const GameLineException(
+      'PGN masih kosong. Tempel teks PGN atau upload file.',
+    );
   }
 
   final PgnGame<PgnNodeData> game = _parse(trimmed);

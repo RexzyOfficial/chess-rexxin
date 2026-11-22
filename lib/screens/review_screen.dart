@@ -11,6 +11,7 @@ import '../analysis/move_quality.dart';
 import '../engine/stockfish_service.dart';
 import '../engine/uci.dart';
 import '../ui_colors.dart';
+import 'board_overlay.dart';
 
 const double _rowHeight = 48;
 
@@ -18,6 +19,7 @@ const double _rowHeight = 48;
 /// - Game Review: autoStart = true, showArrows = false.
 /// - Analyze PGN: autoStart = false (tombol "Analyze Game"), showArrows = true
 ///   (panah MultiPV 1 dan teks alternatif MultiPV 2).
+/// Badge kualitas langkah tampil di papan pada kedua mode.
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({
     super.key,
@@ -150,20 +152,46 @@ class _ReviewBodyState extends State<_ReviewBody> {
   }
 
   Widget _buildBoard(AnalysisController c, double size) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: Chessboard(
-        size: size,
-        controller: _board,
-        orientation: _flipped ? Side.black : Side.white,
-        shapes: _shapes(c),
-        settings: const ChessboardSettings(
-          colorScheme: ChessboardColorScheme.brown,
-          pieceAssets: PieceSet.cburnettAssets,
-          enableCoordinates: true,
-          showValidMoves: false,
-          enablePremoves: false,
-          animationDuration: Duration(milliseconds: 200),
+    final Side orientation = _flipped ? Side.black : Side.white;
+    final int idx = c.selectedIndex;
+    // Posisi awal (idx 0) tidak punya langkah -> tidak ada badge.
+    final MoveReview? review = c.reviewOfPly(idx);
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Stack(
+          children: [
+            Chessboard(
+              size: size,
+              controller: _board,
+              orientation: orientation,
+              shapes: _shapes(c),
+              settings: const ChessboardSettings(
+                colorScheme: ChessboardColorScheme.brown,
+                pieceAssets: PieceSet.cburnettAssets,
+                // Koordinat digambar oleh BoardOverlay agar tidak bertabrakan dengan badge.
+                enableCoordinates: false,
+                showValidMoves: false,
+                enablePremoves: false,
+                animationDuration: Duration(milliseconds: 200),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: BoardOverlay(
+                  size: size,
+                  orientation: orientation,
+                  badgeKey: idx,
+                  badgeSquare:
+                      review == null ? null : c.line.badgeSquare(idx),
+                  quality: review?.quality,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

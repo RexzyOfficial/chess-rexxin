@@ -6,47 +6,22 @@ import 'package:flutter/foundation.dart';
 
 import '../engine/stockfish_service.dart';
 import '../engine/uci.dart';
+import 'analysis_models.dart';
 import 'game_line.dart';
-import 'move_quality.dart';
+import 'move_classifier.dart';
+import 'opening_book.dart';
+
+export 'analysis_models.dart';
 
 enum AnalysisStatus { idle, running, done, cancelled, error }
 
-class PositionAnalysis {
-  const PositionAnalysis({
-    required this.score,
-    required this.depth,
-    this.bestMove,
-    this.altScore,
-    this.altMove,
-  });
-
-  /// MultiPV 1: dari sudut pandang pihak yang jalan pada posisi tersebut.
-  final Score score;
-  final int depth;
-
-  /// Best move MultiPV 1 (UCI), null untuk posisi game over.
-  final String? bestMove;
-
-  /// MultiPV 2: alternatif terkuat berikutnya (null bila hanya ada satu langkah legal).
-  final Score? altScore;
-  final String? altMove;
-}
-
-class MoveReview {
-  const MoveReview({required this.cpl, required this.quality});
-
-  final int cpl;
-  final MoveQuality quality;
-}
-
 /// Menganalisis seluruh posisi sebuah [GameLine] dengan Stockfish
-/// (depth 22, MultiPV 2, tanpa batas waktu) lalu menghitung CPL tiap langkah.
+/// (depth 22, MultiPV 2, tanpa batas waktu) lalu menghitung CPL dan label
+/// kualitas tiap langkah.
 class AnalysisController extends ChangeNotifier {
   AnalysisController(this.line)
       : _analyses = List<PositionAnalysis?>.filled(line.positions.length, null),
         _reviews = List<MoveReview?>.filled(line.length, null);
-
-  static const int _clampCp = 1000;
 
   final GameLine line;
   final StockfishService _engine = StockfishService.instance;
@@ -75,8 +50,6 @@ class AnalysisController extends ChangeNotifier {
         : 0;
     return math.min(1.0, (doneCount + inner) / total);
   }
-
-  int get progressMove => math.max(1, math.min(line.length, doneCount));
 
   PositionAnalysis? analysisAt(int index) => _analyses[index];
 
@@ -136,6 +109,9 @@ class AnalysisController extends ChangeNotifier {
     _reviews.fillRange(0, _reviews.length, null);
     _notify();
 
+    // Buku opening dimuat paralel dengan start engine (tidak pernah melempar).
+    final Future<void> bookFuture = OpeningBook.instance.ensureLoaded();
+
     final bool ok = await _engine.ensureStarted();
     if (_disposed) return;
     if (!ok) {
@@ -143,6 +119,8 @@ class AnalysisController extends ChangeNotifier {
       return;
     }
     await _engine.newGame();
+    if (_disposed) return;
+    await bookFuture;
     if (_disposed) return;
 
     for (int i = 0; i < line.positions.length; i++) {
@@ -171,6 +149,7 @@ class AnalysisController extends ChangeNotifier {
           score: result.primary.score,
           depth: result.primary.depth,
           bestMove: result.bestMove,
+          pv: result.primary.pv,
           altScore: result.alternative?.score,
           altMove: result.alternative?.move,
         );
@@ -190,71 +169,22 @@ class AnalysisController extends ChangeNotifier {
     _notify();
   }
 
-  /// CPL = eval terbaik sebelum langkah (MultiPV 1) - eval setelah langkah,
-  /// keduanya dari sudut pandang pemain yang melangkah.
+  /// Menghitung CPL dan label untuk langkah yang menuju posisi [index].
   void _computeReview(int index) {
     if (index < 1) return;
     final PositionAnalysis? before = _analyses[index - 1];
     final PositionAnalysis? after = _analyses[index];
     if (before == null || after == null) return;
 
-    final int bestCp = _limit(before.score.asCp);
-    // Posisi sesudah langkah dinilai dari sisi lawan -> dibalik.
-    final int afterCp = _limit(-after.score.asCp);
-    final int playedCp = _playedValue(index, before, bestCp, afterCp);
-    final int cpl = math.max(0, bestCp - playedCp);
-
-    _reviews[index - 1] =
-        MoveReview(cpl: cpl, quality: MoveQuality.fromCpl(cpl));
+    _reviews[index - 1] = reviewMove(
+      before: line.positions[index - 1],
+      afterPosition: line.positions[index],
+      move: line.moves[index - 1],
+      beforeAnalysis: before,
+      afterAnalysis: after,
+      inBook: OpeningBook.instance.contains(line.positions[index]),
+    );
   }
-
-  /// Nilai langkah pemain (sudut pandang pemain yang melangkah).
-  /// Dasarnya eval setelah langkah; MultiPV 2 dipakai untuk menguji kewajarannya.
-  int _playedValue(
-    int index,
-    PositionAnalysis before,
-    int bestCp,
-    int afterCp,
-  ) {
-    final Position pos = line.positions[index - 1];
-    final Move played = line.moves[index - 1];
-    final Score? altScore = before.altScore;
-    final int? altCp = altScore == null ? null : _limit(altScore.asCp);
-
-    final int value;
-    if (_isPlayedMove(pos, before.bestMove, played)) {
-      // Sama dengan MultiPV 1: tetap dihitung dari eval setelah langkah.
-      value = afterCp;
-    } else if (altCp != null && _isPlayedMove(pos, before.altMove, played)) {
-      // Sama dengan MultiPV 2: rata-rata dua perkiraan independen
-      // (eval setelah langkah dan skor variasi MultiPV 2).
-      value = ((afterCp + altCp) / 2).round();
-    } else if (altCp != null) {
-      // Di luar dua teratas: tidak mungkin lebih baik dari alternatif kedua.
-      value = math.min(afterCp, altCp);
-    } else {
-      value = afterCp;
-    }
-
-    // Tidak ada langkah yang lebih baik dari langkah terbaik.
-    return math.min(value, bestCp);
-  }
-
-  bool _isPlayedMove(Position pos, String? uci, Move played) {
-    if (uci == null) return false;
-    try {
-      final Move m = pos.normalizeMove(NormalMove.fromUci(uci));
-      return m is NormalMove &&
-          played is NormalMove &&
-          m.from == played.from &&
-          m.to == played.to &&
-          m.promotion == played.promotion;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  int _limit(int cp) => math.max(-_clampCp, math.min(_clampCp, cp));
 
   void _fail(String message) {
     currentDepth = 0;
