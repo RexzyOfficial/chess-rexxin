@@ -255,6 +255,12 @@ class _AnalysisBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool running = ctrl.status == AnalysisStatus.running;
+
+    // Selama berjalan, doneCount = indeks posisi yang sedang dianalisis:
+    // 0 = posisi awal, k = posisi setelah langkah ke-k.
+    final String positionText = ctrl.doneCount == 0
+        ? 'Analyzing start position'
+        : 'Analyzing move ${ctrl.doneCount}/${ctrl.line.length}';
     final String depthText = ctrl.currentDepth > 0
         ? ' · depth ${ctrl.currentDepth}/${StockfishService.analysisDepth}'
         : '';
@@ -273,7 +279,7 @@ class _AnalysisBar extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Analyzing move ${ctrl.progressMove}/${ctrl.line.length}$depthText',
+                    '$positionText$depthText',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
