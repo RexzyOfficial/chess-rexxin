@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../analysis/analysis_controller.dart';
 import '../analysis/game_line.dart';
 import '../analysis/move_quality.dart';
+import '../engine/stockfish_service.dart';
 import '../engine/uci.dart';
 import '../ui_colors.dart';
 
@@ -15,7 +16,8 @@ const double _rowHeight = 48;
 
 /// Layar review bersama.
 /// - Game Review: autoStart = true, showArrows = false.
-/// - Analyze PGN: autoStart = false (tombol "Analyze Game"), showArrows = true.
+/// - Analyze PGN: autoStart = false (tombol "Analyze Game"), showArrows = true
+///   (panah MultiPV 1 dan teks alternatif MultiPV 2).
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({
     super.key,
@@ -122,7 +124,8 @@ class _ReviewBodyState extends State<_ReviewBody> {
     );
   }
 
-  /// Panah best move: hanya di layar analisis PGN, mengikuti posisi terpilih.
+  /// Panah best move (MultiPV 1): hanya di layar analisis PGN,
+  /// mengikuti posisi terpilih.
   Set<Shape> _shapes(AnalysisController c) {
     if (!widget.showArrows) return const {};
     final String? uci = c.bestMoveAt(c.selectedIndex);
@@ -181,7 +184,7 @@ class _ReviewBodyState extends State<_ReviewBody> {
           ctrl: c,
           onNewGame: widget.onNewGame == null ? null : _newGame,
         ),
-        _SelectionInfo(ctrl: c),
+        _SelectionInfo(ctrl: c, showAlternative: widget.showArrows),
         const Divider(height: 1, color: kPanelBorder),
         Expanded(child: _MoveList(ctrl: c, scroll: _scroll)),
       ],
@@ -252,6 +255,9 @@ class _AnalysisBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool running = ctrl.status == AnalysisStatus.running;
+    final String depthText = ctrl.currentDepth > 0
+        ? ' · depth ${ctrl.currentDepth}/${StockfishService.analysisDepth}'
+        : '';
 
     final Widget content = switch (ctrl.status) {
       AnalysisStatus.idle => FilledButton.icon(
@@ -267,13 +273,14 @@ class _AnalysisBar extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Analyzing move ${ctrl.progressMove}/${ctrl.line.length}',
+                    'Analyzing move ${ctrl.progressMove}/${ctrl.line.length}$depthText',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: ctrl.cancel,
                   child: const Text('Cancel'),
@@ -355,11 +362,13 @@ class _AnalysisBar extends StatelessWidget {
   }
 }
 
-/// Langkah terpilih: label kualitas + evaluasi singkat, dengan tombol prev/next.
+/// Langkah terpilih: label kualitas + evaluasi singkat (+ alternatif MultiPV 2
+/// di mode PGN), dengan tombol prev/next.
 class _SelectionInfo extends StatelessWidget {
-  const _SelectionInfo({required this.ctrl});
+  const _SelectionInfo({required this.ctrl, required this.showAlternative});
 
   final AnalysisController ctrl;
+  final bool showAlternative;
 
   @override
   Widget build(BuildContext context) {
@@ -370,6 +379,8 @@ class _SelectionInfo extends StatelessWidget {
         a == null ? null : formatEval(a.score, line.positions[i].turn);
     final MoveReview? review = ctrl.reviewOfPly(i);
     final String title = i == 0 ? 'Start position' : line.moveLabel(i);
+    final String? alternative =
+        showAlternative ? ctrl.alternativeLabelAt(i) : null;
 
     return Row(
       children: [
@@ -378,21 +389,34 @@ class _SelectionInfo extends StatelessWidget {
           onPressed: i > 0 ? () => ctrl.select(i - 1) : null,
         ),
         Expanded(
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 2,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 2,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (review != null) _QualityBadge(quality: review.quality),
+                  if (evalText != null) _EvalChip(text: evalText),
+                ],
               ),
-              if (review != null) _QualityBadge(quality: review.quality),
-              if (evalText != null) _EvalChip(text: evalText),
+              if (alternative != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    'Alternative: $alternative',
+                    style: const TextStyle(fontSize: 12, color: Colors.white60),
+                  ),
+                ),
             ],
           ),
         ),

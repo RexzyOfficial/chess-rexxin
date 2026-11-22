@@ -24,30 +24,52 @@ class Score {
   }
 }
 
+/// Satu baris `info` dari engine (satu variasi MultiPV pada satu depth).
 class InfoLine {
-  const InfoLine({required this.depth, required this.score, required this.pv});
+  const InfoLine({
+    required this.depth,
+    required this.multipv,
+    required this.score,
+    required this.pv,
+  });
 
   final int depth;
+  final int multipv;
   final Score score;
   final List<String> pv;
 }
 
-class EngineResult {
-  const EngineResult({
+/// Satu variasi hasil akhir (MultiPV 1 atau 2).
+class EngineLine {
+  const EngineLine({
     required this.score,
     required this.depth,
     required this.pv,
-    required this.bestMove,
   });
 
   final Score score;
   final int depth;
   final List<String> pv;
+
+  /// Langkah pertama variasi dalam format UCI.
+  String? get move => pv.isEmpty ? null : pv.first;
+}
+
+/// Hasil analisis satu posisi: MultiPV 1 (utama) dan MultiPV 2 (alternatif).
+class EngineResult {
+  const EngineResult({
+    required this.primary,
+    required this.alternative,
+    required this.bestMove,
+  });
+
+  final EngineLine primary;
+  final EngineLine? alternative;
   final String? bestMove;
 }
 
-/// Parse baris `info depth .. score cp|mate .. pv ..`.
-/// Mengembalikan null untuk baris lain, bound (lower/upper), atau multipv > 1.
+/// Parse baris `info depth .. multipv .. score cp|mate .. pv ..`.
+/// Mengembalikan null untuk baris lain atau baris bound (lower/upper).
 InfoLine? parseInfoLine(String line) {
   if (!line.startsWith('info ') || line.startsWith('info string')) return null;
 
@@ -90,8 +112,8 @@ InfoLine? parseInfoLine(String line) {
     }
   }
 
-  if (depth == null || score == null || bounded || multipv != 1) return null;
-  return InfoLine(depth: depth, score: score, pv: pv);
+  if (depth == null || score == null || bounded) return null;
+  return InfoLine(depth: depth, multipv: multipv, score: score, pv: pv);
 }
 
 /// Evaluasi singkat dari sudut pandang Putih: "+0.35", "-1.20", "#3", "-#2".

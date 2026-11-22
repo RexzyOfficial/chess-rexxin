@@ -5,8 +5,14 @@ import 'package:multistockfish/multistockfish.dart';
 import 'uci.dart';
 
 class _Search {
+  _Search(this.onDepth);
+
+  final void Function(int depth)? onDepth;
   final Completer<EngineResult?> completer = Completer<EngineResult?>();
-  InfoLine? best;
+
+  /// Baris terbaru per variasi MultiPV (1 dan 2).
+  final Map<int, InfoLine> lines = <int, InfoLine>{};
+  int depthSeen = 0;
   bool cancelled = false;
 
   void finish(EngineResult? result) {
@@ -16,10 +22,18 @@ class _Search {
 
 /// Pembungkus Stockfish (UCI). Hanya satu instance engine dan satu pencarian
 /// pada satu waktu. Engine baru dijalankan saat dibutuhkan (lazy).
+///
+/// Engine berjalan di thread native (bukan isolate UI), jadi UI tetap responsif.
 class StockfishService {
   StockfishService._();
 
   static final StockfishService instance = StockfishService._();
+
+  /// Kedalaman analisis: `go depth 22`, tanpa movetime atau batas lain.
+  static const int analysisDepth = 22;
+
+  /// Jumlah variasi yang dicari dan dilaporkan.
+  static const int multiPv = 2;
 
   Stockfish? _engine;
   StreamSubscription<String>? _sub;
@@ -50,10 +64,12 @@ class StockfishService {
       final Stockfish engine = await Stockfish.create();
       _engine = engine;
       _sub = engine.stdout.listen(_onLine);
+      engine.state.addListener(_onEngineState);
 
-      // Aman untuk HP low-end. Tanpa Skill Level / UCI_Elo.
+      // Konfigurasi UCI. Tanpa Skill Level / UCI_Elo.
       _send('setoption name Threads value 1');
       _send('setoption name Hash value 32');
+      _send('setoption name MultiPV value $multiPv');
       await _waitReady();
 
       lastError = null;
@@ -89,6 +105,20 @@ class StockfishService {
     await _waitReady();
   }
 
+  /// Engine mati di tengah analisis -> akhiri pencarian (hasil null).
+  void _onEngineState() {
+    final Stockfish? engine = _engine;
+    if (engine == null) return;
+    if (engine.state.value == StockfishState.ready) return;
+
+    final _Search? search = _search;
+    if (search != null) {
+      search.cancelled = true;
+      _search = null;
+      search.finish(null);
+    }
+  }
+
   void _onLine(String line) {
     if (line == 'readyok') {
       final Completer<void>? waiter = _readyWaiter;
@@ -105,67 +135,73 @@ class StockfishService {
           parts.length > 1 && parts[1] != '(none)' ? parts[1] : null;
       _search = null;
 
-      final InfoLine? best = search.best;
-      if (search.cancelled || best == null) {
+      final InfoLine? l1 = search.lines[1];
+      final InfoLine? l2 = search.lines[2];
+
+      if (search.cancelled || l1 == null) {
         search.finish(null);
-      } else {
-        search.finish(
-          EngineResult(
-            score: best.score,
-            depth: best.depth,
-            pv: best.pv,
-            bestMove: bm ?? (best.pv.isNotEmpty ? best.pv.first : null),
-          ),
-        );
+        return;
       }
+
+      // Alternatif hanya dipakai bila berasal dari depth yang sama dengan MultiPV 1.
+      final EngineLine? alternative = (l2 != null && l2.depth == l1.depth)
+          ? EngineLine(score: l2.score, depth: l2.depth, pv: l2.pv)
+          : null;
+
+      search.finish(
+        EngineResult(
+          primary: EngineLine(score: l1.score, depth: l1.depth, pv: l1.pv),
+          alternative: alternative,
+          bestMove: bm ?? (l1.pv.isNotEmpty ? l1.pv.first : null),
+        ),
+      );
       return;
     }
 
     final InfoLine? info = parseInfoLine(line);
-    if (info != null) search.best = info;
+    if (info == null || info.multipv > multiPv) return;
+
+    search.lines[info.multipv] = info;
+    if (info.multipv == 1 && info.depth > search.depthSeen) {
+      search.depthSeen = info.depth;
+      search.onDepth?.call(info.depth);
+    }
   }
 
-  /// Analisis satu posisi: `go depth 20 movetime 5000`.
-  /// Mengembalikan null bila dibatalkan, engine belum siap, atau timeout.
+  /// Analisis satu posisi: `position fen <FEN>` lalu `go depth 22`.
+  /// Tanpa movetime atau batas waktu: berjalan sampai depth 22 selesai.
+  /// Mengembalikan null bila dibatalkan atau engine gagal/mati.
   Future<EngineResult?> analyze(
     String fen, {
-    int depth = 20,
-    int movetimeMs = 5000,
+    void Function(int depth)? onDepth,
   }) async {
     if (_search != null) await cancel();
     if (!isReady) return null;
 
-    final _Search search = _Search();
+    final _Search search = _Search(onDepth);
     _search = search;
     _send('position fen $fen');
-    _send('go depth $depth movetime $movetimeMs');
-
-    return search.completer.future.timeout(
-      Duration(milliseconds: movetimeMs + 20000),
-      onTimeout: () {
-        search.cancelled = true;
-        if (identical(_search, search)) {
-          _search = null;
-          _send('stop');
-        }
-        return null;
-      },
-    );
+    _send('go depth $analysisDepth');
+    return search.completer.future;
   }
 
   /// Membatalkan pencarian yang sedang berjalan dan menunggu engine berhenti.
+  /// Jika engine tidak menjawab `stop`, engine dimatikan agar tidak macet.
   Future<void> cancel() async {
     final _Search? search = _search;
     if (search == null) return;
     search.cancelled = true;
     _send('stop');
+
+    bool acknowledged = true;
     await search.completer.future.timeout(
       const Duration(seconds: 3),
       onTimeout: () {
-        if (identical(_search, search)) _search = null;
+        acknowledged = false;
         return null;
       },
     );
+    if (!acknowledged) await _disposeEngine();
   }
 
   /// Menghentikan analisis dan mematikan engine (membebaskan memori).
@@ -186,6 +222,8 @@ class StockfishService {
     final StreamSubscription<String>? sub = _sub;
     _engine = null;
     _sub = null;
+
+    engine?.state.removeListener(_onEngineState);
 
     final _Search? search = _search;
     _search = null;
